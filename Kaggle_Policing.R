@@ -311,7 +311,6 @@ nams <- c("tract", "geog", "tot1824", "m1824", "toths",
           "other")
 colnames(educ3) <- nams
 #'
-#'
 #'**********************************************************
 #'###Summarize the crime data by census tract. We will explore these later.
 #'
