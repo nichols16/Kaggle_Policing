@@ -310,7 +310,7 @@ nams <- c("tract", "geog", "tot1824", "m1824", "toths",
           "totbs", "mbs", "white", "blk", "ind", "asian", "pacif",
           "other")
 
-
+#'
 #'**********************************************************
 #'###Summarize the crime data by census tract. We will explore these later.
 #'
