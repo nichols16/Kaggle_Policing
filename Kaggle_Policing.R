@@ -303,7 +303,7 @@ educ3 <- educ2[ , c(1:4,6,7,9,10,12,13,15,16,93,102,111,120,129,138)]
 glimpse(educ3)
 colnames(educ3) <- nams
 glimpse(educ3)
-#'
+
 #'####Extract the educational data by census tract
 nams <- c("tract", "geog", "tot1824", "m1824", "toths",
           "mhs", "toths", "mhs", "totsomecol", "msomecol",
