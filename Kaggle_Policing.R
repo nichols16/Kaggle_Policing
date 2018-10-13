@@ -39,6 +39,8 @@ library(stringr)
 library(anytime)
 library(lubridate)
 library(sf)
+library(purrr)
+library(broom)
 #'###Load Data
 #'I saved the Austin Police data to disc for public use
 data37 <- read_csv("D:/Kaggle_Policing/37-00027_UOF-P_2014-2016_prepped.csv", skip = 1)
@@ -301,17 +303,31 @@ educ2 <- educ2[-1, ]
 #'select the most relevant columns
 educ3 <- educ2[ , c(1:4,6,7,9,10,12,13,15,16,93,102,111,120,129,138)]
 glimpse(educ3)
-colnames(educ3) <- nams
-glimpse(educ3)
 #'
 #'####Extract the educational data by census tract
-nams <- c("tract", "geog", "tot1824", "m1824", "toths",
-          "mhs", "toths", "mhs", "totsomecol", "msomecol",
-          "totbs", "mbs", "white", "blk", "ind", "asian", "pacif",
+nams <- c("tract", "geog", "tot_1824", "m_1824", "tot_nohs",
+          "m_nohs", "tot_hs", "m_hs", "tot_somecol", "m_somecol",
+          "tot_bs", "m_bs", "white", "blk", "ind", "asian", "pacif",
           "other")
 colnames(educ3) <- nams
 #'
+#'Extract the 4-digit Census Tract code from tract
+educ3 <- educ3 %>% 
+  mutate(tract = str_extract(tract, pattern = "[0-9]{4}$"))
+#'Don't need geography - remove it
+educ3 <- educ3[ , -2]
+#'Change education groups to numerics
+#'First remove to education groups to work on them
+ed_grps <- educ3[ , -1]
+#'Change them to numerics
+ed_grps <- as.tibble(sapply(ed_grps, as.numeric))
+#Join the education groups back up to the tract codes
+tracts <- data_frame(tract = educ3$tract)
+educ4 <- bind_cols(tracts, ed_grps) 
+glimpse(educ4)
+#'Now we have tract as character and education groups as numerics
 #'**********************************************************
+#'
 #'###Summarize the crime data by census tract. We will explore these later.
 #'
 #'First select the numeric columns and the tract data
