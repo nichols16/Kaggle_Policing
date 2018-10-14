@@ -305,11 +305,11 @@ educ3 <- educ2[ , c(1:4,6,7,9,10,12,13,15,16,93,102,111,120,129,138)]
 glimpse(educ3)
 #'
 #'####Extract the educational data by census tract
-nams <- c("tract", "geog", "tot_1824", "m_1824", "tot_nohs",
+nams2 <- c("tract", "geog", "tot_1824", "m_1824", "tot_nohs",
           "m_nohs", "tot_hs", "m_hs", "tot_somecol", "m_somecol",
           "tot_bs", "m_bs", "white", "blk", "ind", "asian", "pacif",
           "other")
-colnames(educ3) <- nams
+colnames(educ3) <- nams2
 #'
 #'Extract the 4-digit Census Tract code from tract
 educ3 <- educ3 %>% 
