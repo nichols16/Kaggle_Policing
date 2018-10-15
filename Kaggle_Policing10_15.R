@@ -7,8 +7,8 @@
 #'    number_sections: false
 #'    toc: true
 #'    toc_depth: 4
-#'    fig_width: 7
-#'    fig_height: 4.5
+#'    fig_width: 3
+#'    fig_height: 2
 #'    theme: cosmo
 #'    highlight: tango
 #'    code_folding: hide
@@ -401,14 +401,14 @@ combo <- police_stats %>%
 glimpse(combo)
 nacheck(combo)
 combo %>% map(nacheck)
-#Deal with NA's
+#Deal with NA's - Random Imputation
 #'#####This is a relatively simple method to impute missing data. 
-#'First, dtermine the approximate probability distribution that the 
+#'First, determine the approximate probability distribution that the 
 #'vector of data comes from. You can do this by simply looking at its 
-#'probability distribution. ggplot it using geom_density. Then, 
-#'you do some experimenting wih different probability distributions 
+#'probability distribution, then ggplot it using geom_density. Then, 
+#'do some experimenting wih different probability distributions 
 #'using random generators: rnorm, rgamma, rbeta, rcauchy etc. I have found that 
-#'these three will give you an approximate distribution for many situations.
+#'these four will give you an approximate distribution for many situations.
 #'Get the proper scale by multiplying the distributon.
 #'Then, impute the NA's from the distribution you have determined with an
 #'if_else function. Use the absolute value if you don't want negative imputed values.
@@ -423,68 +423,61 @@ combo %>% map(nacheck)
 #'First, plot the density  ofthe vector:
 ggplot(combo) +
   geom_density(aes(x = pop_male_18_24)) +
-  xlim(0, 1000)
+  xlim(-200, 1000)
 #'Next, experiment with some distributions and multiply for scale and plot it
 df <- data.frame(x = 200*rgamma(1000, 1.5)) #<- this was my pick. I won't show this step again. 
 ggplot(df) +
   geom_density(aes(x = x)) + 
-  xlim(0, 1000)
+  xlim(-50, 1000)
 #'Then, imput your NA's with this probability distribution.
 combo <- combo %>% 
   mutate(pop_male_18_24 = if_else(is.na(combo$pop_male_18_24), abs(200*rgamma(1, 1.5)), combo$pop_male_18_24))
 #'
 ggplot(combo) +
-  geom_density(aes(x = pct_white_hsgrad)) #--> 100*rbeta (5,1)
+  geom_density(aes(x = pct_white_hsgrad)) +
+  xlim(30, 160)#--> 100*rbeta (5,1)
 combo <- combo %>% 
   mutate(pct_white_hsgrad = if_else(is.na(combo$pct_white_hsgrad), abs(100*rbeta (1, 5,1)), combo$pct_white_hsgrad))
 #'
 ggplot(combo) +
   geom_density(aes(x = pct_black_hsgrad)) + 
-  xlim(0, 150) #--> cauchy (1, 99, 8)
+  xlim(20, 130) #--> 100*rbeta (10,2)
 combo <- combo %>% 
   mutate(pct_black_hsgrad = if_else(is.na(combo$pct_black_hsgrad), abs(100*rbeta (1,10,2)), combo$pct_black_hsgrad))
 #'
 ggplot(combo) +
-  geom_density(aes(x = white_h)) #-->100*rbeta (12,2.5)
+  geom_density(aes(x = white_h)) +
+  xlim(30, 130)#-->100*rbeta (12,2.5)
 combo <- combo %>% 
   mutate(white_h = if_else(is.na(combo$white_h), abs(100*rbeta (1,12,2.5)), combo$white_h))
 #'
 ggplot(combo) +
-  geom_density(aes(x = black_h)) #--> 100*rbeta (.8,5))
+  geom_density(aes(x = black_h)) +
+  xlim(-30, 50)#--> 100*rbeta (.8,5))
 combo <- combo %>% 
   mutate(black_h = if_else(is.na(combo$black_h), abs(100*rbeta (1,.8,5)), combo$black_h))
 #'
 ggplot(combo) +
-geom_density(aes(x = tot_pov)) #--> 100*rbeta (.9,5)
+geom_density(aes(x = tot_pov)) +
+  xlim(-30, 80)#--> 100*rbeta (.9,5)
 combo <- combo %>% 
   mutate(tot_pov = if_else(is.na(combo$tot_pov), abs(100*rbeta (1,.9,5)), combo$tot_pov))
 #'
 ggplot(combo) +
-geom_density(aes(x = white_pov)) #-->  8*rbeta (.9,1.5)
+geom_density(aes(x = white_pov)) +
+  xlim(-10, 30)#-->  8*rbeta (.9,1.5)
 combo <- combo %>% 
   mutate(white_pov = if_else(is.na(combo$white_pov),  abs(8*rbeta (1,.9,1.5)), combo$white_pov))
 #'
 ggplot(combo) +
-  geom_density(aes(x = black_pov)) #--> 100*rbeta (.5,1.2)
+  geom_density(aes(x = black_pov)) +
+  xlim(-50, 110)#--> 100*rbeta (.5,1.2)
 combo <- combo %>% 
   mutate(black_pov = if_else(is.na(combo$black_pov), abs(100*rbeta (1,.5,1.2)), combo$black_pov))
 #'Check for any NA's left
 nacheck(combo) #--> no more NA's
 glimpse(combo)
-#'###Obtain more demographic data from US Census
-#'
-#'###Combine spatial data with attribute data
-#'####Construct a Spatial Object
-apd <- st_read("D:/Kaggle_Policing/Dept_37-00027/37-00027_Shapefiles/APD_DIST.shp")
-summary(apd)
-glimpse(apd)
-apd$geometry[[1]]
-plot(apd["CODE"])#picked code at random to show close-up
-
-#T'ravis County is UTM Zone 14
-#'+proj=utm +zone=14 +a=6378137 +b=6378135.99663591 +datum=WGS84 +units=m +no_defs 
-
-
+#'#####At this stage, we have our police data combined with the geographic census data. We can start doing some modeling and visualization next.
 
 
 
