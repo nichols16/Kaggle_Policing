@@ -1,0 +1,999 @@
+---
+title: 'Austin Police Data'
+author: 'David Nichols'
+date: '12 Oct 2018'
+output:
+ html_document:
+   number_sections: false
+   toc: true
+   toc_depth: 5
+   fig_width: 3
+   fig_height: 2
+   theme: cosmo
+   highlight: tango
+   code_folding: hide
+---
+  
+```{r}
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE, error=FALSE)
+```
+
+###Introduction
+This study will measure disparities in policing in Austin, Texas. These measures will be used as 
+benchmarks of racial justice within and between
+cities. Recognition of these differences can be 
+used by law enforcement to improve public safety
+and trust between police and the communities they
+serve.
+
+###Approach - Austin, TX - Police Data
+This section will gather the data and transform it into a tidy form 
+that can be used for later analysis. I will use random imputation to 
+deal with NA's. Please see my blog (https://epi2020datascience.blogspot.com/) 
+for a discussion of random imputation in several posts. 
+I have used the Austin Police data to start with. This can be combined later
+with census data to add more features. 
+
+```{r }
+library(tidyverse)
+library(stringr)
+library(anytime)
+library(lubridate)
+library(sf)
+library(purrr)
+library(broom)
+```
+
+###Load Data
+I saved the Austin Police data to disc for public use
+```{r 1}
+data37 <- read_csv("D:/Kaggle_Policing/37-00027_UOF-P_2014-2016_prepped.csv", skip = 1)
+glimpse(data37)
+```
+
+
+Remove spaces from column names
+
+```{r 2}
+nams <- names(data37) %>% 
+  str_replace_all(" ", "")  
+colnames(data37) <- nams
+names(data37)
+```
+
+###Extract features from police data
+
+Injury to police officer
+
+```{r 3}
+data37 <- data37 %>% 
+  mutate(officer_injury = if_else(EffectonOfficer == "NO COMPLAINT OF INJURY/PAIN", 0, 1)) # 1 means officer had injury
+```
+
+convert NA to 0 - assuming that 0 is no injury
+
+```{r 4}
+data37 <- data37 %>% 
+  mutate(officer_injury = if_else(is.na(officer_injury), 0, officer_injury))
+sum(is.na(data37$officer_injury))
+```
+
+Injury to subject
+
+```{r 5}
+data37 <- data37 %>% 
+  mutate(subject_injury = if_else(SubjectEffects == "NO COMPLAINT OF INJURY/PAIN", 0, 1)) # 1 means subject had injury
+```
+
+convert NA to 0- assuming that 0 is no injury
+
+```{r 6}
+data37 <- data37 %>% 
+  mutate(subject_injury = if_else(is.na(subject_injury), 0, subject_injury))
+sum(is.na(data37$subject_injury))
+```
+
+Fatal outcome to subject
+
+```{r 7}
+data37 <- data37 %>% 
+  mutate(subject_death = if_else(SubjectEffects == "DEATH", 1, 0)) # 1 means subject had injury
+```
+
+convert NA to 0 - assuming that 0 is no fatal outcome
+
+```{r 8}
+data37 <- data37 %>% 
+  mutate(subject_death = if_else(is.na(subject_death), 0, subject_death))
+sum(is.na(data37$subject_death)) # 1 means subject died
+```
+
+Weapon used by officer
+
+```{r 9}
+data37 <- data37 %>% 
+  mutate(officer_used_weapon = if_else(str_detect(data37$WeaponUsed1, "WEAPONLESS"), 0, 1))
+```
+
+1 means officer used some type of weapon
+Firearm used by officer
+
+```{r 10}
+data37 <- data37 %>% 
+  mutate(officer_used_firearm = if_else(is.na(NumberShots), 0, as.numeric(NumberShots)))
+sum(is.na(data37$officer_used_firearm)) 
+```
+
+1 means officer used some type of firearm
+Change coordinate names
+to be used in later section for additional geographic features
+
+```{r 11}
+data37 <- data37 %>% 
+  rename(latitude = "X-Coordinate",
+         longitude = "Y-Coordinate")
+```
+
+
+Form the date related features
+
+```{r 12}
+data37 <- data37 %>% 
+  mutate(date = anytime(DateOccurred)) %>%  #det date in proper form
+  mutate(day = lubridate::day(date)) %>% 
+  mutate(dayofweek = wday(date, label = TRUE)) %>% 
+  mutate(mon = month(date, label = TRUE)) %>% 
+  mutate(yr = year(date))
+```
+
+
+Remove unnecessary features
+
+```{r 13}
+data37_1 <- data37 %>% 
+  dplyr::select(-c(PrimaryKey, DateOccurred, MasterSubjectID,
+                   SubjectRole, SubjectConductDesc, SubjectResistance,
+                   WeaponUsed1, WeaponUsed2, WeaponUsed3, WeaponUsed4,
+                   NumberShots, SubjectEffects, EffectonOfficer,
+                   CityCouncilDistrict, City, State, Latitude,
+                   Longitude))
+```
+
+Continue modifications to dataset
+
+SubjectSex
+
+```{r 14}
+data37_1 <- data37_1 %>% 
+  mutate(male = if_else(SubjectSex == "M", 1, 0)) 
+data37_1 <- data37_1 %>% dplyr::select(-SubjectSex)
+```
+
+
+Race
+
+```{r 15}
+data37_1$race <- as.numeric(0)
+data37_1$race <- 
+  case_when(
+    data37_1$Race == "Asian" ~ 1,
+    data37_1$Race == "Black" ~ 2,
+    data37_1$Race == "Hispanic" ~ 3,
+    data37_1$Race == "Unknown" ~ 4,
+    data37_1$Race == "White" ~ 5,
+    TRUE ~ as.numeric(0)
+  )
+data37_1 <- data37_1 %>% dplyr::select(-Race)
+```
+
+
+OfficerYrsofService
+
+```{r 16}
+data37_1 <- data37_1 %>% 
+  rename(offserv = "OfficerYrsofService")
+```
+
+
+NatureofContact
+
+```{r 17}
+data37_1$contact <- as.numeric(0)
+data37_1$contact <- 
+  case_when(
+    data37_1$NatureofContact == "DISPATCHED CALL" ~ 1,
+    data37_1$NatureofContact == "OTHER" ~ 2,
+    data37_1$NatureofContact == "TACTICAL OPERATION" ~ 3,
+    data37_1$NatureofContact == "TRAFFIC STOP" ~ 4,
+    data37_1$NatureofContact == "VIEWED OFFENSE" ~ 5,
+    data37_1$NatureofContact == "WARRANT SERVICE" ~ 6,
+    TRUE ~ as.numeric(0)
+  )
+data37_1 <- data37_1 %>% dplyr::select(-NatureofContact)
+```
+
+
+AreaCommand 
+
+```{r 18}
+data37_1$command <- as.numeric(0)
+data37_1$command <- 
+  case_when(
+    data37_1$AreaCommand == "-" ~ 1,
+    data37_1$AreaCommand == "88" ~ 2,
+    data37_1$AreaCommand == "AD" ~ 3,
+    data37_1$AreaCommand == "AP" ~ 4,
+    data37_1$AreaCommand == "BA" ~ 5,
+    data37_1$AreaCommand == "CH" ~ 6,
+    data37_1$AreaCommand == "DA" ~ 7,
+    data37_1$AreaCommand == "ED" ~ 8,
+    data37_1$AreaCommand == "FR" ~ 9,
+    data37_1$AreaCommand == "GE" ~ 10,
+    data37_1$AreaCommand == "HE" ~ 11,
+    data37_1$AreaCommand == "ID" ~ 12,
+    TRUE ~ as.numeric(0)
+  )
+data37_1 <- data37_1 %>% dplyr::select(-AreaCommand)
+```
+
+
+OfficerOrganizationDesc
+
+```{r 19}
+data37_1$org <- as.numeric(0) #initialize
+data37_1$org <- 
+  case_when(
+    str_detect(data37_1$OfficerOrganizationDesc, "PATROL") == TRUE ~ 1,
+    str_detect(data37_1$OfficerOrganizationDesc, "TEAM") == TRUE ~ 2,
+    str_detect(data37_1$OfficerOrganizationDesc, "ENFORCEMENT") == TRUE ~ 3,
+    str_detect(data37_1$OfficerOrganizationDesc, "REGION") == TRUE ~ 4,
+    str_detect(data37_1$OfficerOrganizationDesc, "OCD") == TRUE ~ 5,
+    str_detect(data37_1$OfficerOrganizationDesc, "SUPRT") == TRUE ~ 6
+  )
+data37_1 <-  data37_1 %>% 
+  mutate(org = if_else(is.na(data37_1$org), 0, data37_1$org))
+data37_1 <- data37_1 %>% dplyr::select(-OfficerOrganizationDesc)
+glimpse(data37_1)
+```
+
+
+ReasonDesc
+
+```{r 20}
+table(data37_1$ReasonDesc)
+```
+
+The reason descriptions to me seem vague. I don't think that these 
+can be useful for answering any research questions that will come up.
+Therefore I will delete this feature.
+
+```{r 21}
+data37_1 <- data37_1 %>% dplyr::select(-ReasonDesc)
+glimpse(data37_1)
+```
+
+
+###Dealing with NA's and Random Imputation
+
+####Check for NA's and random impute if needed
+
+```{r 22}
+nas <- sum(is.na(data37_1))
+paste("Total number of NA's in data is:", nas)
+```
+
+
+
+```{r 23}
+nacheck <- function(x) {
+  nas <- sum(is.na(x))
+  return(nas)
+}
+```
+
+
+if no comment is present assume no NA's
+
+```{r 24}
+nacheck(data37_1$RIN)
+nacheck(data37_1$offserv)
+nacheck(data37_1$latitude) # will deal with geographic data in a later section
+nacheck(data37_1$longitude)# will deal with geographic data in a later section
+nacheck(data37_1$Geolocation)
+nacheck(data37_1$officer_injury)
+nacheck(data37_1$subject_injury)
+nacheck(data37_1$subject_death)
+```
+
+
+####Random Imputation
+
+```{r 25}
+nacheck(data37_1$ officer_used_weapon)# 35 NA's
+(tab1 <- xtabs(~data37_1$ officer_used_weapon))
+prob <- tab1[[2]]/(tab1[[1]] + tab1[[2]])
+paste0("The proportion of 1's to 0's is: ", round(prob, 2))
+```
+
+Replace the missing values using random imputation with binomial distribution.
+
+```{r 26}
+data37_1$officer_used_weapon <- if_else(is.na(data37_1$officer_used_weapon), rbinom(1,1,prob), as.integer(data37_1$officer_used_weapon))
+sum(is.na(data37_1$officer_used_weapon))
+```
+
+
+
+```{r 27}
+nacheck(data37_1$officer_used_firearm)
+nacheck(data37_1$date) #will deal with time related data in a later section
+nacheck(data37_1$day) #will deal with time related data in a later section
+nacheck(data37_1$dayofweek) #will deal with time related data in a later section
+nacheck(data37_1$mon) #will deal with time related data in a later section
+nacheck(data37_1$yr) #will deal with time related data in a later section
+```
+
+
+Random Imputation
+
+```{r 28}
+nacheck(data37_1$male) #324 NA's
+(tab1 <- xtabs(~data37_1$male))
+prob <- tab1[[2]]/(tab1[[1]] + tab1[[2]])
+paste0("The proportion of 1's to 0's is: ", round(prob, 2))
+```
+
+Replace the missing values using random imputation with binomial distribution.
+
+```{r 29}
+data37_1$male <- if_else(is.na(data37_1$male), rbinom(1,1,prob), as.integer(data37_1$male))
+sum(is.na(data37_1$male))
+```
+
+
+
+```{r 30}
+nacheck(data37_1$race)
+nacheck(data37_1$contact)
+nacheck(data37_1$command)
+nacheck(data37_1$org)
+```
+
+
+
+```{r 31}
+glimpse(data37_1)
+```
+
+
+###Combine police data with geocoding data
+
+You cannot tell from the data given what census tract each subject belongs to.
+You can get the individual level tract numbers from the US Census.
+You can block geocode up to 10000 units at a time. This is a free service.
+Get the census tracts from [US Census](https://www.census.gov/geo/maps-data/data/geocoder.html) (Saved as UTF8 CSV)
+
+```{r 32}
+tracts <- read_csv("AustinCensusTracts1.csv")
+glimpse(tracts)
+```
+
+
+
+```{r 33}
+tracts <- tracts %>%
+  drop_na("Tract")
+tracts$RIN <- as.character(tracts$RIN)
+glimpse(tracts)
+tracts1 <- tracts %>% dplyr::select(RIN, Tract)
+glimpse(tracts1)
+str(tracts1)
+```
+
+
+
+```{r 34}
+data37_2 <- data37_1
+glimpse(data37_2)
+data37_2$RIN <- as.character(data37_2$RIN)
+data37_2$dayofweek <- as.character(data37_2$dayofweek)
+data37_2$mon <- as.character(data37_2$mon)
+str(data37_2)
+```
+
+
+Since we can only use subjects whose census tract we know,
+we will eliminate those subjects who could not be geocoded.
+
+```{r 35}
+austin1 <- data37_2 %>% 
+  left_join(tracts, by = "RIN")
+austin1 <- austin1 %>% 
+  drop_na("Tract")
+sum(is.na(austin1$Tract))
+#change Tract to character
+austin1$Tract <- as.character(austin1$Tract)
+austin1 <- austin1 %>% rename(tract = "Tract")
+glimpse(austin1)
+```
+
+
+###Summarize police data by tract
+
+
+```{r 36}
+officer_injury <- austin1 %>% 
+group_by(tract) %>% 
+  summarize(officer_injury = sum(officer_injury))
+subject_injury <- austin1 %>% 
+  group_by(tract) %>% 
+  summarize(subject_injury = sum(subject_injury))
+yrs_on_force <- austin1 %>% 
+  group_by(tract) %>% 
+  summarize(yrs_on_force = sum(offserv))
+officer_used_weapon <- austin1 %>% 
+  group_by(tract) %>% 
+  summarize(officer_used_weapon = sum(officer_used_weapon))
+officer_used_firearm <- austin1 %>% 
+  group_by(tract) %>% 
+  summarize(officer_used_firearm = sum(officer_used_firearm))
+subject_death <- austin1 %>% 
+  group_by(tract) %>% 
+  summarize(subject_death = sum(subject_death))
+police_stats <- bind_cols(
+  officer_injury, subject_injury, yrs_on_force,
+  officer_used_weapon, officer_used_firearm,
+  subject_death)
+police_stats <- police_stats %>% 
+  dplyr::select(tract, officer_injury, subject_injury,
+                yrs_on_force, officer_used_weapon,
+                officer_used_firearm, subject_death)
+glimpse(police_stats)
+```
+
+*********************************************************
+###Extract educational attainment data
+####Read and reduce the data
+
+```{r 37}
+educ1 <- read_csv("Austin16_educ.csv")
+colnames(educ1) <- educ1[1, ]
+educ2 <- educ1[-1, ]
+```
+
+select the most relevant columns
+
+```{r 38}
+educ3 <- educ2[ , c(2,8,342,414)]
+glimpse(educ3)
+```
+
+####Extract the educational data by census tract
+
+```{r 39}
+nams2 <- c("tract", "pop_male_18_24", "pct_white_hsgrad", "pct_black_hsgrad")
+colnames(educ3) <- nams2
+```
+
+Extract the 4-digit Census Tract code from tract
+
+```{r 40}
+educ3 <- educ3 %>% 
+  mutate(tract = str_extract(tract, pattern = "[0-9]{4}$"))
+sum(is.na(educ3))
+educ4 <- as.tibble(sapply(educ3, as.numeric))
+glimpse(educ4)
+sum(is.na(educ4$pct_black_hsgrad))
+```
+
+Deal with NA's
+Median Imputation for 1 NA
+
+```{r 41}
+med1 <- median(educ4$pct_white_hsgrad, na.rm = TRUE)
+educ4 <- educ4 %>% 
+  mutate(pct_white_hsgrad = if_else(is.na(educ4$pct_white_hsgrad), med1, educ4$pct_white_hsgrad))
+```
+
+Median Imputation for 8 NA's
+
+```{r 42}
+med2 <- median(educ4$pct_black_hsgrad, na.rm = TRUE)
+educ4 <- educ4 %>% 
+  mutate(pct_black_hsgrad = if_else(is.na(educ4$pct_black_hsgrad), med2, educ4$pct_black_hsgrad))
+sum(is.na(educ4$pct_black_hsgrad))
+#change tract to character
+educ4$tract <- as.character(educ4$tract)
+glimpse(educ4)
+```
+
+Now we have tract as character and education groups as numerics
+**********************************************************
+###Extract housing data
+####Read and reduce the data
+similar procedure as for educational data
+
+```{r 43}
+hous1 <- read_csv("Austin16_housing.csv")
+colnames(hous1) <- hous1[1, ]
+hous2 <- hous1[-1, ]
+```
+
+select the most relevant columns
+
+```{r 44}
+hous3 <- hous2[ , c(2,10, 16)]
+nams3 <- c("tract", "white_h", "black_h")
+colnames(hous3) <- nams3
+hous4 <- hous3 %>% 
+  mutate(tract = str_extract(tract, pattern = "[0-9]{4}$"))
+hous5 <- as.tibble(sapply(hous4, as.numeric))
+nacheck(hous5)
+nacheck(hous5$tract)
+nacheck(hous5$white_h)
+nacheck(hous5$black_h)
+#Median imputation for 3 NA's
+med_w <- median(hous5$white_h, na.rm = TRUE)
+med_b <- median(hous5$black_h, na.rm = TRUE)
+hous5 <- hous5 %>% mutate(white_h = if_else(is.na(hous5$white_h), med_w, hous5$white_h))
+hous5 <- hous5 %>% mutate(black_h = if_else(is.na(hous5$black_h), med_w, hous5$black_h))
+nacheck(hous5)
+```
+
+change tract back to character
+
+```{r 45}
+hous5$tract <- as.character(hous5$tract)
+glimpse(hous5)
+```
+
+####Combine education and housing data
+
+```{r 46}
+ed_hous <- bind_cols(educ4, hous5)
+glimpse(ed_hous)
+```
+
+
+******************************************************
+
+###Extract poverty data
+
+####Read and reduce the data
+similar procedure as for housing data
+
+```{r 47}
+pov1 <- read_csv("Austin16_poverty.csv")
+colnames(pov1) <- pov1[1, ]
+pov2 <- pov1[-1, ]
+```
+
+select the most relevant columns
+
+```{r 48}
+pov3 <- pov2[ , c(2,8,81,86)]
+nams3 <- c("tract", "tot_pov", "white_pov", "black_pov")
+colnames(pov3) <- nams3
+pov3 <- pov3 %>% 
+  mutate(tract = str_extract(tract, pattern = "[0-9]{4}$"))
+sum(is.na(pov3))
+```
+
+convert to numerics
+
+```{r 49}
+pov4 <- as.tibble(sapply(pov3, as.numeric))
+#convert tract back to character
+pov4$tract <- as.character(pov4$tract)
+glimpse(pov4)
+ed_hous_pov <- cbind(educ4, hous5, pov4)
+#remove duplicate "tracts"
+ed_hous_pov <- ed_hous_pov[ , -c(5,8)]
+glimpse(ed_hous_pov)
+#*********************************************************
+```
+
+###Combine police data and census data
+
+```{r 50}
+combo <- police_stats %>% 
+  left_join(ed_hous_pov, by = "tract")
+glimpse(combo)
+nacheck(combo)
+combo %>% map(nacheck)
+#Deal with NA's - Random Imputation
+```
+###Random Imputation
+#####This is a relatively simple method to impute missing data. 
+First, determine the approximate probability distribution that the 
+vector of data comes from. You can do this by simply looking at its 
+probability distribution, then ggplot it using geom_density. Then, 
+do some experimenting wih different probability distributions 
+using random generators: rnorm, rgamma, rbeta, rcauchy etc. I have found that 
+these four will give you an approximate distribution for many situations.
+Get the proper scale by multiplying the distributon.
+Then, impute the NA's from the distribution you have determined with an
+if_else function. Use the absolute value if you don't want negative imputed values.
+We are trying to accomplish two things with this method.
+1. Approximate the counterfactual value.
+2. Approximate the uncertainty of the counterfactual value.
+This method stands up well against other
+methods of imputaion: median or mean imputation, MICE, and probably others.
+Plese see my blog for a demonstration and discussion of random imputation:
+https://epi2020datascience.blogspot.com/
+
+First, plot the density of the vector:
+
+```{r 51, fig.width = 3, fig.height = 2, warning = FALSE}
+ggplot(combo) +
+  geom_density(aes(x = pop_male_18_24)) +
+  xlim(-200, 1000)
+```
+
+Next, experiment with some distributions and multiply for scale and plot it
+
+```{r 52, fig.width = 3, fig.height = 2, warning = FALSE}
+df <- data.frame(x = 200*rgamma(1000, 1.5)) #<- this was my pick. I won't show this step again. 
+ggplot(df) +
+  geom_density(aes(x = x)) + 
+  xlim(-50, 1000)
+```
+
+Then, imput your NA's with this probability distribution.
+
+```{r 53}
+combo <- combo %>% 
+  mutate(pop_male_18_24 = if_else(is.na(combo$pop_male_18_24), abs(200*rgamma(1, 1.5)), combo$pop_male_18_24))
+```
+
+
+
+```{r 54, fig.width = 3, fig.height = 2, warning = FALSE}
+ggplot(combo) +
+  geom_density(aes(x = pct_white_hsgrad)) +
+  xlim(30, 160)#--> 100*rbeta (5,1)
+combo <- combo %>% 
+  mutate(pct_white_hsgrad = if_else(is.na(combo$pct_white_hsgrad), abs(100*rbeta (1, 5,1)), combo$pct_white_hsgrad))
+```
+
+
+
+```{r 55, fig.width = 3, fig.height = 2, warning = FALSE}
+ggplot(combo) +
+  geom_density(aes(x = pct_black_hsgrad)) + 
+  xlim(20, 130) #--> 100*rbeta (10,2)
+combo <- combo %>% 
+  mutate(pct_black_hsgrad = if_else(is.na(combo$pct_black_hsgrad), abs(100*rbeta (1,10,2)), combo$pct_black_hsgrad))
+```
+
+
+
+```{r 56, fig.width = 3, fig.height = 2, warning = FALSE}
+ggplot(combo) +
+  geom_density(aes(x = white_h)) +
+  xlim(30, 130)#-->100*rbeta (12,2.5)
+combo <- combo %>% 
+  mutate(white_h = if_else(is.na(combo$white_h), abs(100*rbeta (1,12,2.5)), combo$white_h))
+```
+
+
+
+```{r 57, fig.width = 3, fig.height = 2, warning = FALSE}
+ggplot(combo) +
+  geom_density(aes(x = black_h)) +
+  xlim(-30, 50)#--> 100*rbeta (.8,5))
+combo <- combo %>% 
+  mutate(black_h = if_else(is.na(combo$black_h), abs(100*rbeta (1,.8,5)), combo$black_h))
+```
+
+
+
+```{r 58, fig.width = 3, fig.height = 2, warning = FALSE}
+ggplot(combo) +
+geom_density(aes(x = tot_pov)) +
+  xlim(-30, 80)#--> 100*rbeta (.9,5)
+combo <- combo %>% 
+  mutate(tot_pov = if_else(is.na(combo$tot_pov), abs(100*rbeta (1,.9,5)), combo$tot_pov))
+```
+
+
+
+```{r 59, fig.width = 3, fig.height = 2, warning = FALSE}
+ggplot(combo) +
+geom_density(aes(x = white_pov)) +
+  xlim(-10, 30)#-->  8*rbeta (.9,1.5)
+combo <- combo %>% 
+  mutate(white_pov = if_else(is.na(combo$white_pov),  abs(8*rbeta (1,.9,1.5)), combo$white_pov))
+```
+
+
+
+```{r 60, fig.width = 3, fig.height = 2, warning = FALSE}
+ggplot(combo) +
+  geom_density(aes(x = black_pov)) +
+  xlim(-50, 110)#--> 100*rbeta (.5,1.2)
+combo <- combo %>% 
+  mutate(black_pov = if_else(is.na(combo$black_pov), abs(100*rbeta (1,.5,1.2)), combo$black_pov))
+```
+
+Check for any NA's left
+
+```{r 61}
+nacheck(combo) #--> no more NA's
+glimpse(combo)
+```
+
+#####At this stage, we have our police data combined with the geographic census data. 
+###Research Questions
+
+####Which tracts have the highest subject injuries?
+```{r 62}
+combo %>% 
+  group_by(tract) %>% 
+  summarize(subj_inj = subject_injury) %>% 
+  arrange(desc(subj_inj))
+```
+
+####Which tracts have the highest officer injuries?
+```{r 63}
+combo %>% 
+  group_by(tract) %>% 
+  summarize(ofc_inj = officer_injury) %>% 
+  arrange(desc(ofc_inj))
+```
+
+####Which tracts have the highest combined injuries?
+```{r 64}
+combo %>% 
+  group_by(tract) %>% 
+  summarize(subject_injury, officer_injury) %>% 
+  arrange(desc(subject_injury))
+```
+
+####Which subject racial groups have the highest injuries?
+######Race codes:
+######0 = Other, 1 = Asian, 2 = Black, 3 = Hispanic, 4 = Unknown, 5 = White 
+```{r 65}
+austin1 %>% 
+  group_by(race) %>% 
+  summarize(subj_inj = sum(subject_injury)) %>% 
+  arrange(race)  
+
+```
+
+####Tract 1100 appears to have the highest injury rate. How many subject injuries were recorded during the study period?
+```{r 66}
+austin1 %>% 
+  group_by(tract = "1100") %>% 
+  summarize(subj_inj_1100 = sum(subject_injury))
+```
+
+####How do Tract 1100's subject injuries break down by race?
+```{r 67, fig.width = 4, fig.height = 3}
+austin2 <- austin1 %>% 
+  group_by(tract = "1100", race) %>% 
+  summarize(subj_inj_1100 = sum(subject_injury))
+ggplot(austin2, aes(x = factor(race), y = subj_inj_1100)) + 
+  geom_col() +
+  ylim(0, 1100) +
+  scale_x_discrete(labels = c("Other", "Asian", "Black", 
+                              "Hispanic", "Unknown", "White")) +
+  labs(title = "Census Tract 1100", 
+       x = "Race of Subject",
+       y = "Subject Injuries")
+```
+
+####How do Tract 1100's officer injuries break down by subject race?
+```{r 68, fig.width = 4, fig.height = 3}
+austin2 <- austin1 %>% 
+  group_by(tract = "1100", race) %>% 
+  summarize(ofc_inj_1100 = sum(officer_injury))
+ggplot(austin2, aes(x = factor(race), y = ofc_inj_1100)) + 
+  geom_col() +
+  ylim(0, 1000) +
+  scale_x_discrete(labels = c("Other", "Asian", "Black", 
+                              "Hispanic", "Unknown", "White")) +
+  labs(title = "Census Tract 1100", 
+       x = "Race of Subject",
+       y = "Officer Injuries")
+  
+
+```
+
+####How does Tract 1100 compare to other tracts demographically?
+#####Tract 1100 - population of males age 18 to 24.
+```{r 69, fig.width = 4, fig.height = 3}
+
+combo %>% 
+  filter(tract == "1100") %>% 
+  dplyr::select(tract, pop_male_18_24) 
+combo %>% 
+  dplyr::select(tract, pop_male_18_24) %>% 
+  arrange(desc(pop_male_18_24), tract)
+```
+
+#####Tracts with highest population of males age 18 to 24.
+```{r 70}
+combo %>% 
+  mutate(pop_male_18_24 = round(pop_male_18_24)) %>% 
+  dplyr::select(tract, pop_male_18_24) %>% 
+  arrange(desc(pop_male_18_24), tract)
+```
+
+#####Tract 1100  - Percentage of white to black owned housing
+```{r 71}
+combo %>% 
+  filter(tract == "1100") %>% 
+  dplyr::select(tract, white_h, black_h) %>% 
+  mutate(white_black_ratio = white_h/black_h) %>% 
+  mutate(white_black_ratio = round(white_black_ratio))
+
+```
+
+#####Tracts with highest ratio of white to black owned housing
+```{r 72}
+combo %>% 
+  dplyr::select(tract, white_h, black_h) %>% 
+  mutate(white_black_ratio = white_h/black_h) %>%   
+  mutate(white_black_ratio = round(white_black_ratio)) %>% 
+  filter(white_black_ratio != Inf) %>% 
+  arrange(desc(white_black_ratio))
+
+
+```
+
+#####Tract 1100  - Percentage of blacks to whites living below poverty level
+```{r 73}
+combo %>% 
+  filter(tract == "1100") %>% 
+  dplyr::select(tract, white_pov, black_pov) %>% 
+  mutate(black_white_poverty = black_pov/white_pov) %>% 
+  mutate(black_white_poverty = round(black_white_poverty, 2))
+```
+
+#####Tracts with highest ratio of blacks to whites living below poverty level
+```{r 74}
+combo %>% 
+  dplyr::select(tract, white_pov, black_pov) %>%
+  mutate(black_white_poverty = black_pov/white_pov) %>%
+  mutate(black_white_poverty = round(black_white_poverty)) %>% 
+  arrange(desc(black_white_poverty))
+```
+
+####Do officers in Tract 1100 use weapons more than in other tracts?
+#####Tract 1100
+```{r 75}
+combo %>% 
+  filter(tract == "1100") %>% 
+  dplyr::select(tract,  officer_used_weapon, officer_used_firearm)  
+  
+```
+#####Tracts with the highest use of weapons
+```{r 76}
+combo %>% 
+  dplyr::select(tract,  officer_used_weapon, officer_used_firearm) %>% 
+  arrange(desc( officer_used_weapon, officer_used_firearm))
+```
+
+####Which tracts had incidents resulting in a subject death?
+```{r 77}
+combo %>% 
+  dplyr::select(tract, subject_death) %>% 
+  arrange(desc(subject_death))
+
+```
+
+####Which tracts have the higest total officer years in service?
+```{r 78}
+combo %>% 
+  dplyr::select(tract, yrs_on_force) %>% 
+  arrange(desc(yrs_on_force))
+```
+
+
+```{r 79}
+
+```
+
+####Are subjects injured more on a particular day of the week?
+```{r 80}
+austin1 %>% 
+  dplyr::select(dayofweek, subject_injury) %>% 
+  drop_na() %>% 
+  group_by(dayofweek) %>% 
+  summarize(injPerDay = sum(subject_injury)) %>% 
+  arrange(desc(injPerDay))
+
+```
+
+####Are any variables significantly related to subject injury?
+#####Modeling  subject injury in police encounters
+######Create all the linear models based on combo
+```{r }
+m1 <- lm(subject_injury ~ 1, data = combo)
+m2 <- update(m1, . ~ . + officer_injury)
+m3 <- update(m2, . ~ . + yrs_on_force)
+m4 <- update(m3, . ~ . + officer_used_weapon)
+m5 <- update(m4, . ~ . + officer_used_firearm)
+m6 <- update(m5, . ~ . + pop_male_18_24)
+m7 <- update(m6, . ~ . + pop_male_18_24)
+m8 <- update(m7, . ~ . + pct_white_hsgrad)
+m9 <- update(m8, . ~ . + yrs_on_force)
+m10 <- update(m9, . ~ . + white_h)
+m11 <- update(m10, . ~ . + black_h)
+m12 <- update(m11, . ~ . + tot_pov)
+m13 <- update(m12, . ~ . + white_pov)
+m14 <- update(m13, . ~ . + black_pov)
+```
+
+######Which is the best model based on information criteria
+```{r }
+aics <- AIC(m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14)
+which.min(aics$AIC)
+```
+######Model m12 appears to be the best model (lowest AIC)
+######Which features are stsitically significant (0.05)
+```{r }
+m12_tidy <- tidy(m12)
+m12_tidy %>% 
+  filter(p.value <0.05)
+
+```
+
+#####How good a model is this?
+```{r, fig.width = 3, fig.height = 2, warning = FALSE }
+z <- tibble(x = m12$fitted.values,
+            y = m12$residuals)
+ggplot(z) +
+  geom_point(aes(x = x, y = y)) +
+  labs(x = "Fitted Values", y = "Residuals")
+```
+
+######This model looks symmetrical in the y axis, but not in the x direction. A likely reason is that the model is homoscedastic. There is some correlation between some variables such as between officer_used_weapon and officer_used_firearm. 
+```{r }
+cor(combo$officer_used_weapon, combo$officer_used_firearm)
+```
+
+######There is a high r-squared value indicating that the outcome is adequaely explained by the model.
+```{r }
+summary(m12)$r.squared
+```
+####Recommendations to Austin authorities
+######So we have a good model, at least good enough for government work. We have enough information gleaned from our data to make some recommendations to the Austin authorities.<br>
+1. Concentrate on Tract 1100. It has the highest prevalence of violent police encounters, injuries to officers and subjects, and use of weapons. Officer injury is highly associated with subject injury. This may indicate that other factors associated with the specific police encounter may have more to do with the eruption of violence than socioeconomic factors related to the population. Further study could involve factors occuring at the site and time of the encounter. Concentrating on Tract 1100 may shed light on other areas due to the extreme conditions here.<br>
+2. We have defined justice here specifally in terms of injuries to subjects during police encounters. Many other factors inform our concept of justice which are not touched in the police data. 
+
+```{r }
+
+```
+
+
+```{r }
+
+```
+
+
+```{r }
+
+```
+
+
+```{r }
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

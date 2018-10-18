@@ -43,7 +43,7 @@ library(purrr)
 library(broom)
 #'###Load Data
 #'I saved the Austin Police data to disc for public use
-data37 <- read_csv("D:/Kaggle_Policing/37-00027_UOF-P_2014-2016_prepped.csv", skip = 1)
+data37 <- read_csv("../input/austinpolicedata/37-00027_UOF-P_2014-2016_prepped.csv", skip = 1)
 glimpse(data37)
 #'
 #'Remove spaces from column names
@@ -246,7 +246,7 @@ glimpse(data37_1)
 #'You can get the individual level tract numbers from the US Census.
 #'You can block geocode up to 10000 units at a time. This is a free service.
 #'Get the census tracts from [US Census](https://www.census.gov/geo/maps-data/data/geocoder.html) (Saved as UTF8 CSV)
-tracts <- read_csv("AustinCensusTracts1.csv")
+tracts <- read_csv("../input/censustractsaustin/AustinCensusTracts1.csv")
 glimpse(tracts)
 #'
 tracts <- tracts %>%
@@ -342,7 +342,7 @@ glimpse(educ4)
 #'###Extract housing data
 #'####Read and reduce the data
 #'similar procedure as for educational data
-hous1 <- read_csv("Austin16_housing.csv")
+hous1 <- read_csv("../input/austin-housing-data/Austin16_housing.csv")
 colnames(hous1) <- hous1[1, ]
 hous2 <- hous1[-1, ]
 #'select the most relevant columns
@@ -375,7 +375,7 @@ glimpse(ed_hous)
 #'
 #'####Read and reduce the data
 #'similar procedure as for housing data
-pov1 <- read_csv("Austin16_poverty.csv")
+pov1 <- read_csv("../input/austin-poverty-data/Austin16_poverty.csv")
 colnames(pov1) <- pov1[1, ]
 pov2 <- pov1[-1, ]
 #'select the most relevant columns
